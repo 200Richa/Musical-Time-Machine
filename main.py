@@ -1,71 +1,58 @@
-# Authorization Code FLow
-from secrets import CLIENT_SECRET_KEY, CLIENT_ID, BASE_ENDPOINT, USER_ID, REDIRECT_URL
+# ----------------------------------------------IMPORTS-------------------------------------------
+from secrets import CLIENT_SECRET_KEY, CLIENT_ID, REDIRECT_URL, CACHE_PATH
 import requests
 from bs4 import BeautifulSoup
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import pprint
 
-# Scraping Billboard
-# date = '2000-08-12' # YYYY-MM-DD
-# response = requests.get(url=f"https://www.billboard.com/charts/hot-100/{date}/")
-# website = response.text
-# # Making Soup
-# soup = BeautifulSoup(website, "html.parser")
-# songs = list()
-# for song in soup.select("li.o-chart-results-list__item h3#title-of-a-story"):
-#     songs.append(song.getText().strip('\n'))
+# -----------------------------------------SCRAPING BILLBOARD-------------------------------------
+# date = '2000-08-12'  # YYYY-MM-DD
 
+date = input("Which year do you want to travel to? Type the date in this format YYYY-MM-DD: ")
+response = requests.get(url=f"https://www.billboard.com/charts/hot-100/{date}/")
+website = response.text
 
+# -----------------------------------------  MAKING SOUP ------------------------------------------
+soup = BeautifulSoup(website, "html.parser")
+songs = list()
+for song in soup.select("li.o-chart-results-list__item h3#title-of-a-story"):
+    songs.append(song.getText().strip('\n'))
 
-# Spotify Authorization
-# payload = {
-#         'Content-Type': 'application/x-www-form-urlencoded',
-#         'grant_type': 'client_credentials',
-#     }
-# TOKEN_URL = 'https://accounts.spotify.com/api/token'
-# res = requests.post(TOKEN_URL, auth=(CLIENT_ID, CLIENT_SECRET_KEY), data=payload)
-# res.raise_for_status()
-# res_data = res.json()
-# access_token = res_data.get('access_token')
-#
-# data = {
-#     "name": "New Playlist",
-#     "description": "New playlist description",
-# }
-# headers = {
-#     "Content-Type": "application/json; charset=utf-8",
-#     'Authorization': f"Bearer {access_token}"
-# }
-# response = requests.post(f"{BASE_ENDPOINT}/users/{USER_ID}/playlists", headers=headers,json=data)
-# response.raise_for_status()
-# print(response.json())
+# ------------------------------SPOTIFY AUTHORIZATION-AUTHORIZATION CODE FLOW-----------------------
+sp = spotipy.Spotify(
+    auth_manager=SpotifyOAuth(
+        scope="playlist-modify-private",
+        redirect_uri=REDIRECT_URL,
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET_KEY,
+        show_dialog=True,
+        cache_path=CACHE_PATH
+    )
+)
+user_id = sp.current_user()["id"]
 
+# ---------------------------------------GETTING SONG URIs------------------------------------------
 
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=CLIENT_ID,
-                                               client_secret=CLIENT_SECRET_KEY,
-                                               redirect_uri=REDIRECT_URL,
-                                               scope="playlist-modify-private",
-                                               show_dialog=True,
-                                               cache_path="token.txt"
-                                               ))
-# # usr_id = sp.current_user["id"]
-# name = songs[0]
-# track_uri = f"spotify:track:{name}:year:2000"
-#
-# response = requests.get(url=f"{BASE_ENDPOINT}/tracks/11dFghVXANMlKmJXsNCbNl")
-# print(response.json())
+song_uris = list()
+year = date.split("-")[0]
+for song in songs:
+    result = sp.search(q=f"track:{song} year:{year}", type="track")
+    # print(result)
+    try:
+        uri = result["tracks"]["items"][0]["uri"]
+        song_uris.append(uri)
+    except IndexError:
+        print(f"{song} doesn't exist in Spotify. Skipped.")
 
-# parameters = {
-#     "client_id": CLIENT_ID,
-#     "response_type": "code",
-#     "client_secret": CLIENT_SECRET_KEY,
-#     "redirect_uri": REDIRECT_URL,
-#     # "scope": "playlist-modify-private",
-#     "scope": "user-read-private",
-#     "show_dialog": False,
-# }
-# response = requests.get(url=f"https://accounts.spotify.com/authorize", params=parameters)
-# # print(response.json())
-# print(response)
-# code = response.code
+# print(song_uris)
+
+# --------------------------------------CREATING A NEW PRIVATE PLAYLIST ----------------------------------
+
+playlist_name = f"{date} Billboard 100"
+playlist = sp.user_playlist_create(user=user_id,
+                                   name=playlist_name,
+                                   public=False)
+
+sp.playlist_add_items(playlist_id=playlist["id"],
+                      items=song_uris)
